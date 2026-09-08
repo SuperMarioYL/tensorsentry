@@ -1,0 +1,82 @@
+{
+  "name": "tensorsentry",
+  "tagline": "Inspect tensor structure before loading a checkpoint.",
+  "architecture": {
+    "title": "How TensorSentry works",
+    "nodes": [
+      {
+        "title": "Header reader",
+        "detail": "safetensors_reader / gguf_reader"
+      },
+      {
+        "title": "TensorProfile",
+        "detail": "Declared names and shapes"
+      },
+      {
+        "title": "Structure validator",
+        "detail": "tensor_validate.py"
+      },
+      {
+        "title": "Combined report",
+        "detail": "scanner.py; report.py"
+      }
+    ],
+    "edges": [
+      [
+        0,
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        2,
+        3
+      ]
+    ]
+  },
+  "process": {
+    "title": "From input to a useful result",
+    "steps": [
+      {
+        "title": "Write tiny tensor",
+        "detail": "Two F32 values"
+      },
+      {
+        "title": "Read metadata",
+        "detail": "Name, dtype and shape"
+      },
+      {
+        "title": "Compare profile",
+        "detail": "Valid versus missing tensor"
+      }
+    ],
+    "result": "The real tiny tensor passes its demo profile; an empty tensor set produces a missing-tensor anomaly."
+  },
+  "integrations": {
+    "title": "Supported input and output routes",
+    "items": [
+      {
+        "title": "safetensors",
+        "detail": "Header metadata parsing"
+      },
+      {
+        "title": "GGUF",
+        "detail": "Tensor metadata adapter"
+      },
+      {
+        "title": "TensorProfile",
+        "detail": "Declared structural rules"
+      },
+      {
+        "title": "picklescan",
+        "detail": "Exploit-scanning integration"
+      },
+      {
+        "title": "JSON report",
+        "detail": "Structured scan findings"
+      }
+    ]
+  }
+}

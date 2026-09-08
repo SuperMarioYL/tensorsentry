@@ -1,141 +1,132 @@
-<div align="right"><sub><b>English</b>&nbsp;&nbsp;⇄&nbsp;&nbsp;<a href="./README.md">中文</a></sub></div>
+[简体中文](./README.md) · [Website](https://tensorsentry.lei6393.com) · [GitHub](https://github.com/SuperMarioYL/tensorsentry)
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="./assets/hero-dark.svg">
-  <source media="(prefers-color-scheme: light)" srcset="./assets/hero-light.svg">
-  <img src="./assets/hero-light.svg" width="880" alt="TensorSentry — agent-safety scanner for CN-model weights">
+  <source media="(max-width: 600px) and (prefers-color-scheme: dark)" srcset="./assets/presentation/hero-mobile-dark.svg">
+  <source media="(max-width: 600px)" srcset="./assets/presentation/hero-mobile-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="./assets/presentation/hero-dark.svg">
+  <img src="./assets/presentation/hero-light.svg" width="960" alt="Hero diagram">
 </picture>
 
-<p align="center"><sub>Validate MoE/MLA tensor structure + detect pickle exploits in DeepSeek-V4 / Kimi K3 / Qwen3.7 weight artifacts, before agents load them.</sub></p>
+# tensorsentry
 
-**Block poisoned CN-model weights before your agent calls `load_model()`.** The 2025 Hugging Face intrusion proved the registry gate is not enough, and picklescan cannot tell a DeepSeek MLA weight from a generic pickle — TensorSentry validates each CN model's MoE/MLA tensor structure and detects pickle/code-exec exploits before load.
+**Inspect tensor structure before loading a checkpoint.**
 
-<p align="center">
-  <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="license"></a>
-  <a href="https://github.com/SuperMarioYL/tensorsentry/releases"><img src="https://img.shields.io/github/v/release/SuperMarioYL/tensorsentry?color=%235E5CE6&label=release" alt="release"></a>
-  <a href="https://github.com/SuperMarioYL/tensorsentry/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/SuperMarioYL/tensorsentry/ci.yml?branch=main&label=ci" alt="ci"></a>
-  <img src="https://img.shields.io/badge/python-%E2%89%A53.10-3776AB.svg" alt="python">
-  <img src="https://img.shields.io/badge/Agent--safety-weights%20as%20attack%20surface-5E5CE6.svg" alt="Agent-safety">
-</p>
+TensorSentry reads tensor names, dtypes and shapes, compares them with a declared profile, and reports structural anomalies.
 
-## Contents
-- [Architecture](#architecture)
-- [Why this exists](#why-this-exists)
-- [Install & Quickstart](#install--quickstart)
-- [Usage](#usage)
-- [Demo](#demo)
-- [vs picklescan](#vs-picklescan)
-- [Roadmap](#roadmap)
-- [License](#license)
-- [Share](#share)
+## Why use it
 
-<h2><img src="https://api.iconify.design/tabler:topology-star-3.svg?color=%230071E3&width=24" height="22" align="absmiddle" alt=""> Architecture</h2>
+A model loader can fail late when a checkpoint has missing projections or mismatched shapes. Metadata checks surface these disagreements before the main load path allocates model tensors.
+
+- **Check metadata first** — Shape checks do not require inference execution.
+- **Declare the expected structure** — Profiles make required tensor constraints explicit.
+- **Separate check results** — Structure, exploit and provenance statuses have different meanings.
+
+## Architecture
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="./assets/atlas-dark.svg">
-  <source media="(prefers-color-scheme: light)" srcset="./assets/atlas-light.svg">
-  <img src="./assets/atlas-light.svg" width="880" alt="architecture: weight artifact → TensorSentry scan (header parse / profile match / pickle scan) → verdict">
+  <source media="(max-width: 600px) and (prefers-color-scheme: dark)" srcset="./assets/presentation/architecture-mobile-dark.svg">
+  <source media="(max-width: 600px)" srcset="./assets/presentation/architecture-mobile-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="./assets/presentation/architecture-dark.svg">
+  <img src="./assets/presentation/architecture-light.svg" width="960" alt="Architecture diagram">
 </picture>
 
-One Python process, one CLI. The readers parse only the header (tensor names/shapes/dtypes) and never load full weights, so a 70 GB checkpoint scans in seconds. The core primitive is the `TensorProfile` — a declarative, per-model MoE/MLA tensor-structure schema that generic pickle scanners structurally lack and have no reason to encode.
+Container readers expose a common tensor view. The structural validator applies TensorProfile requirements, including declared MoE and MLA constraints. The scanner combines structure with the pickle scanner adapter; provenance is currently a separate unimplemented stage.
 
-```
-cli.py ──► scanner.py (orchestrator)
-             ├─► safetensors_reader.py / gguf_reader.py   (header-only parse, no full load)
-             ├─► tensor_validate.py ◄── model_profiles/{deepseek_v4,kimi_k3,qwen3_7}.py
-             ├─► pickle_scan.py    (wraps picklescan lib — do not reinvent)
-             └─► provenance.py     (ModelScope/HF API + sigstore verify — m3 stub)
-          ──► report.py    (rich text + JSON)
-```
+| Component | Responsibility |
+| --- | --- |
+| `Header reader` | safetensors_reader / gguf_reader |
+| `TensorProfile` | Declared names and shapes |
+| `Structure validator` | tensor_validate.py |
+| `Combined report` | scanner.py; report.py |
 
-<h2><img src="https://api.iconify.design/tabler:shield-check.svg?color=%230071E3&width=24" height="22" align="absmiddle" alt=""> Why this exists</h2>
+## Install and quickstart
 
-DeepSeek-V4 / Kimi K3 / Qwen3.7 ship weekly via ModelScope, and agent runtimes default to `load_model()`-ing them into a tool-calling loop. The 2025 Hugging Face intrusion ([the 500-upvote HN post where Tailscale concedes it didn't stop it](https://tailscale.com/blog/hugging-face-intrusion)) made "weights are an attack surface" a lived event — but picklescan reads arbitrary pickle bytes for code-exec and cannot assert "this DeepSeek MLA weight must contain `q_lora_rank=1536`/`kv_lora_rank=512` projection tensors", let alone that a Kimi K3 must expose 896 experts. **The per-model structural layer before agent load is exactly the layer CN mirrors are missing post-intrusion.**
-
-<h2><img src="https://api.iconify.design/tabler:rocket.svg?color=%230071E3&width=24" height="22" align="absmiddle" alt=""> Install & Quickstart</h2>
+Build with the version declared in the repository manifest. Run the example from the repository root.
 
 ```bash
-pip install tensorsentry                                  # or uv tool install tensorsentry
-tensorsentry profiles                                      # list supported CN-model profiles
-tensorsentry scan --model deepseek-v4 ./model.safetensors # validate structure + detect exploits before load
+git clone https://github.com/SuperMarioYL/tensorsentry.git
+cd tensorsentry
+uv venv .venv
+uv pip install --python .venv/bin/python -e .
+source .venv/bin/activate
 ```
 
-<details><summary>Run from source (development)</summary>
+Generate a tiny safetensors file in a temporary directory, check its explicit shape profile, then show the missing-tensor rejection on an empty input.
 
 ```bash
-git clone https://github.com/SuperMarioYL/tensorsentry && cd tensorsentry
-pip install -e .
-pytest -q
+PYTHONPATH=src python3 examples/presentation-demo.py
 ```
-</details>
 
-<h2><img src="https://api.iconify.design/tabler:terminal-2.svg?color=%230071E3&width=24" height="22" align="absmiddle" alt=""> Usage</h2>
+## Recorded demo
 
-Three subcommands cover m1 (structure validation) and m2 (combined structure + exploit scan):
+<picture>
+  <source media="(max-width: 600px) and (prefers-color-scheme: dark)" srcset="./assets/presentation/process-mobile-dark.svg">
+  <source media="(max-width: 600px)" srcset="./assets/presentation/process-mobile-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="./assets/presentation/process-dark.svg">
+  <img src="./assets/presentation/process-light.svg" width="960" alt="Process diagram">
+</picture>
+
+The real tiny tensor passes its demo profile; an empty tensor set produces a missing-tensor anomaly.
+
+```text
+{
+  "fixture_profile": "demo-linear",
+  "tensor_count": 1,
+  "valid_structure": "ok",
+  "empty_structure": "anomaly",
+  "missing_codes": [
+    "missing_tensor"
+  ]
+}
+```
+
+The complete command and output are recorded in [docs/demo-results.json](./docs/demo-results.json). Inputs and reproduction code are included in the repository.
+
+![Existing terminal recording](./assets/demo.gif)
+
+The existing recording is retained for context; the text example above documents the reproducible scenario.
+
+## Usage
+
+The CLI exposes the following operations. Commands after the example use your own paths or identifiers.
 
 ```bash
-# list registered CN-model profiles (MLA / MoE structural schemas)
 tensorsentry profiles
-
-# m1 — structure-only: DeepSeek-V4 MLA projections + 256-expert MoE
-tensorsentry validate deepseek-v4 ./model-00001-of-0000X.safetensors
-
-# m2 — combined structure + exploit scan (.gguf and full model dirs supported too)
-tensorsentry scan --model deepseek-v4 ./deepseek-v4.gguf
-tensorsentry scan --model kimi-k3 ./kimi-k3/          # scan a whole ModelScope pull dir
-tensorsentry scan ./suspect_dir                       # no model → exploit-only
-
-# CI gating: --json output + non-zero exit on a flag
-tensorsentry scan --model qwen3.7 ./qwen.safetensors --json
+tensorsentry validate <profile-id> model.safetensors
+tensorsentry scan --model <profile-id> ./checkpoint --json
 ```
 
-<details><summary>Sample combined verdict output</summary>
+## Configuration
 
-```
-                      TensorSentry verdict — deepseek-v4 [safetensors]
-┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃ Check         ┃ Status        ┃ Detail                                       ┃
-┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
-│ STRUCTURE     │ ok            │ 778 tensors, 2 layers, experts=256           │
-│ EXPLOIT       │ clean         │ no __reduce__ / code-exec tensors found      │
-│ PROVENANCE    │ unreachable   │ m3 milestone (stub) — not yet verified       │
-└───────────────┴───────────────┴──────────────────────────────────────────────┘
-```
-</details>
+Select a registered profile only after comparing its assumptions with the actual model. The Python API accepts an explicit TensorProfile, which the demo uses for a two-value F32 tensor. The header parser does not load a model into an inference runtime.
 
-<h2><img src="https://api.iconify.design/tabler:photo.svg?color=%230071E3&width=24" height="22" align="absmiddle" alt=""> Demo</h2>
+## Integrations and responsibilities
 
-![demo](assets/demo.gif)
+<picture>
+  <source media="(max-width: 600px) and (prefers-color-scheme: dark)" srcset="./assets/presentation/integrations-mobile-dark.svg">
+  <source media="(max-width: 600px)" srcset="./assets/presentation/integrations-mobile-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="./assets/presentation/integrations-dark.svg">
+  <img src="./assets/presentation/integrations-light.svg" width="960" alt="Integrations diagram">
+</picture>
 
-The 10-minute happy path from `profiles` → `validate` → `scan` → `--json` (`docs/demo.tape`, rendered to gif by CI via vhs).
+The following routes are implemented in the source. Choose the input that matches your task and keep the resulting artifact with your project.
 
-<h2><img src="https://api.iconify.design/tabler:arrows-exchange-2.svg?color=%230071E3&width=24" height="22" align="absmiddle" alt=""> vs picklescan</h2>
+| Route | Implemented role |
+| --- | --- |
+| safetensors | Header metadata parsing |
+| GGUF | Tensor metadata adapter |
+| TensorProfile | Declared structural rules |
+| picklescan | Exploit-scanning integration |
+| JSON report | Structured scan findings |
 
-| Axis | [picklescan](https://github.com/mmaitre314/picklescan) | TensorSentry |
-|---|---|---|
-| pickle code-exec detection | ✓ (arbitrary pickle bytes) | ✓ (wraps picklescan, no reinvention) |
-| per-model MoE/MLA tensor-structure validation | — | ✓ DeepSeek MLA ranks + Kimi 896 experts |
-| .safetensors / .gguf header-only scan | partial | ✓ 70 GB checkpoint in seconds, no weights loaded |
-| ModelScope/HF distribution awareness | — | ✓ the layer CN mirrors are missing |
-| maintenance cost | generic, substrate-agnostic | must track each CN model's weekly tensor schema |
+## Limits and next steps
 
-picklescan does one thing well — scanning arbitrary pickle bytes for code-exec. TensorSentry's irreducible novelty is the **per-model structural validation** generic scanners structurally cannot do (the table's last row: tracking per-model schemas opposes their substrate-agnostic philosophy).
+- Profiles are repository declarations and must be checked against your exact checkpoint architecture; a named profile does not establish current vendor specifications.
+- A structural pass does not prove provenance, numerical correctness or absence of every exploit. Provenance verification is not implemented.
+- The demo uses a custom demo-only profile and a tiny valid tensor file. It does not evaluate real model weights or pickle detection.
 
-<h2><img src="https://api.iconify.design/tabler:map-2.svg?color=%230071E3&width=24" height="22" align="absmiddle" alt=""> Roadmap</h2>
+Provenance verification and runtime integration remain future work. Additional profiles need representative checkpoint evidence.
 
-- [x] **m1** — safetensors reader + tensor_validate + deepseek-v4 MLA profile; `validate` reports structural anomalies
-- [x] **m2** — pickle_scan (wraps picklescan) + gguf_reader + kimi-k3 / qwen3.7 profiles; `scan` emits combined structure+exploit verdict
-- [ ] **m3** — provenance (ModelScope/HF manifest + sigstore) + report polish + PyPI publish + Gitee mirror; end-to-end `pip install tensorsentry` ready for Show HN
-- [ ] v0.2 — agent-runtime `load_model()` preflight hook + CI gate plugin (currently `out_of_scope`, the next wedge)
+## License and contributions
 
-<h2><img src="https://api.iconify.design/tabler:license.svg?color=%230071E3&width=24" height="22" align="absmiddle" alt=""> License</h2>
-
-MIT, see [LICENSE](./LICENSE). Issues / PRs welcome at [github.com/SuperMarioYL/tensorsentry/issues](https://github.com/SuperMarioYL/tensorsentry/issues). After pushing, set repo topics: `gh repo edit --add-topic agent-safety --add-topic supply-chain --add-topic safetensors`.
-
-## Share
-
-```
-TensorSentry — the agent-safety scanner that checks CN-model MoE/MLA tensor structure + pickle exploit before your agent loads the weight. HF intrusion proved weights are the attack surface; picklescan can't tell a DeepSeek MLA weight from a pickle. https://github.com/SuperMarioYL/tensorsentry
-```
-
-<p align="center"><sub><a href="./LICENSE">MIT</a> © 2026 SuperMarioYL</sub></p>
+See [LICENSE](./LICENSE). When reporting an issue, include a minimal input, the command, and the observed output.

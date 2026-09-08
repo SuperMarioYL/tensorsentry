@@ -1,90 +1,215 @@
 {
-  "schema": 1,
+  "schema": 3,
   "name": "tensorsentry",
   "github": "https://github.com/SuperMarioYL/tensorsentry",
   "host": "tensorsentry.lei6393.com",
-  "lang": { "primary": "zh", "toggle": true },
-  "accent": ["#5fb878"],
+  "palette": "auto",
+  "lang": {
+    "primary": "en",
+    "toggle": true
+  },
+  "meta": {
+    "visual_style": "neon-particle",
+    "demo_source": "docs/demo-results.json"
+  },
   "hero": {
-    "eyebrow": {
-      "zh": "加载前先验 · 结构对不对 · 后门藏没藏",
-      "en": "Pre-load check · structure intact · no hidden backdoor"
-    },
     "headline": {
-      "zh": "agent 加载国产权重前\n先把投毒的挡在门外",
-      "en": "Before your agent loads a CN-model weight\nkeep the poisoned one out"
+      "en": "Inspect tensor structure before loading a checkpoint.",
+      "zh": "加载检查点之前先检查张量结构。"
     },
     "sub": {
-      "zh": "加载前一条命令扫一遍：校验权重内部结构对不对得上模型该有的样子，再揪出藏在文件里的可执行后门。",
-      "en": "One command, before load: verifies the weight's internal structure matches the model's expected layout, then surfaces any executable backdoor hidden inside the file."
+      "en": "TensorSentry reads tensor names, dtypes and shapes, compares them with a declared profile, and reports structural anomalies.",
+      "zh": "TensorSentry 读取张量名称、dtype 与 shape，与声明配置比较并报告结构异常。"
     },
-    "command": "tensorsentry scan --model deepseek-v4 ./model.safetensors",
-    "cta": { "zh": "开始使用", "en": "Get started" },
-    "ctaGithub": { "zh": "在 GitHub 查看", "en": "View on GitHub" }
+    "href": "#quickstart"
   },
   "advantages": [
     {
       "title": {
-        "zh": "结构对不对，加载前就知道",
-        "en": "Know the structure is right before you load"
+        "en": "Check metadata first",
+        "zh": "先检查元数据"
       },
       "body": {
-        "zh": "国产模型每周推送权重制品，却没人能告诉你这份文件的内部结构是不是该模型该有的样子。加载前按模型逐一套结构基准——张量在不在、形状对不对、有没有被悄悄改过。",
-        "en": "CN labs ship a fresh weight artifact every week, and nothing tells you whether this file's internal layout is the one that model is supposed to have. Before load, each model is checked against its own structural baseline — are the tensors there, are the shapes right, has anything been quietly tampered with."
-      },
-      "chips": [
-        "› DeepSeek-V4 · Kimi K3 · Qwen3.7",
-        "› 不加载完整权重 · 几秒扫完"
-      ]
+        "en": "Shape checks do not require inference execution.",
+        "zh": "shape 检查无需执行推理。"
+      }
     },
     {
       "title": {
-        "zh": "藏在文件里的后门，加载前揪出来",
-        "en": "Surface backdoors hidden in the file, before load"
+        "en": "Declare the expected structure",
+        "zh": "声明期望结构"
       },
       "body": {
-        "zh": "通用扫描器只盯可执行代码片段，认不出一个被改了结构的国产权重。加载前同时扫一遍文件里有没有藏可执行后门——那些会在加载时偷偷跑起来的东西。",
-        "en": "Generic scanners only chase executable code snippets and can't tell a structurally tampered CN weight from a normal one. Before load, the file is also swept for executable backdoors — the kind that quietly run the moment you load it."
-      },
-      "chips": [
-        "› 探测可执行后门",
-        "› 单文件 · 整目录一次扫完"
-      ]
+        "en": "Profiles make required tensor constraints explicit.",
+        "zh": "配置明确必须满足的张量约束。"
+      }
     },
     {
       "title": {
-        "zh": "一条命令，加载前的安全门",
-        "en": "One command, the safety gate before load"
+        "en": "Separate check results",
+        "zh": "区分检查结果"
       },
       "body": {
-        "zh": "不用搭流水线、不用写脚本。指向刚拉下来的权重制品，一条命令同时给出结构与后门的结论——干净才放行，可疑就非零退出，机器可读结果直接接进 CI。",
-        "en": "No pipeline to set up, no script to write. Point it at a freshly pulled weight artifact and one command returns a structure + backdoor verdict — clean passes, suspect exits non-zero, and the machine-readable result drops straight into CI."
+        "en": "Structure, exploit and provenance statuses have different meanings.",
+        "zh": "结构、攻击与来源状态各自表达不同含义。"
+      }
+    }
+  ],
+  "demo": {
+    "title": {
+      "en": "Run it on a complete example",
+      "zh": "运行完整示例"
+    },
+    "note": {
+      "en": "Generate a tiny safetensors file in a temporary directory, check its explicit shape profile, then show the missing-tensor rejection on an empty input.",
+      "zh": "在临时目录生成微型 safetensors 文件，检查明确的 shape 配置，再展示空输入的缺失张量拒绝。"
+    },
+    "source": "https://github.com/SuperMarioYL/tensorsentry/blob/main/docs/demo-results.json",
+    "steps": [
+      {
+        "label": "Recorded run",
+        "body": "A tiny real F32 safetensors file and an explicit demo-only profile exercise header parsing and structural validation. No model-specific profile accuracy, exploit scan or provenance verification is claimed.",
+        "command": "PYTHONPATH=src python3 examples/presentation-demo.py",
+        "output": "{\n  \"fixture_profile\": \"demo-linear\",\n  \"tensor_count\": 1,\n  \"valid_structure\": \"ok\",\n  \"empty_structure\": \"anomaly\",\n  \"missing_codes\": [\n    \"missing_tensor\"\n  ]\n}",
+        "image": "/assets/presentation/demo-0-light.svg",
+        "imageDark": "/assets/presentation/demo-0-dark.svg"
+      }
+    ]
+  },
+  "quickstart": {
+    "title": {
+      "en": "Try it locally",
+      "zh": "本地上手"
+    },
+    "body": {
+      "en": "Generate a tiny safetensors file in a temporary directory, check its explicit shape profile, then show the missing-tensor rejection on an empty input.",
+      "zh": "在临时目录生成微型 safetensors 文件，检查明确的 shape 配置，再展示空输入的缺失张量拒绝。"
+    },
+    "steps": [
+      {
+        "title": {
+          "en": "Install from source",
+          "zh": "从源码安装"
+        },
+        "code": "git clone https://github.com/SuperMarioYL/tensorsentry.git\ncd tensorsentry\nuv venv .venv\nuv pip install --python .venv/bin/python -e .\nsource .venv/bin/activate"
       },
-      "chips": [
-        "› 结构 + 后门一次出结论",
-        "› --json 输出 · CI 可 gating"
-      ]
+      {
+        "title": {
+          "en": "Run the included example",
+          "zh": "运行随仓示例"
+        },
+        "code": "PYTHONPATH=src python3 examples/presentation-demo.py"
+      }
+    ]
+  },
+  "limitations": [
+    {
+      "en": "Profiles are repository declarations and must be checked against your exact checkpoint architecture; a named profile does not establish current vendor specifications.",
+      "zh": "配置是仓库中的声明，需要与实际检查点架构核对；配置名称不等于当前厂商规格已获验证。"
+    },
+    {
+      "en": "A structural pass does not prove provenance, numerical correctness or absence of every exploit. Provenance verification is not implemented.",
+      "zh": "结构通过不证明来源、数值正确性或不存在所有攻击；来源验证尚未实现。"
+    },
+    {
+      "en": "The demo uses a custom demo-only profile and a tiny valid tensor file. It does not evaluate real model weights or pickle detection.",
+      "zh": "示例使用演示专用配置与微型有效张量文件，不评估真实模型权重或 pickle 检测。"
     }
   ],
   "scene": {
-    "kind": "hub-nodes",
-    "nodes": ["DeepSeek-V4", "Kimi K3", "Qwen3.7"]
+    "kind": "neon-graph",
+    "fallback": "/assets/presentation/scene-dark.svg",
+    "fallbackLight": "/assets/presentation/scene-light.svg"
   },
-  "cta": {
-    "headline": {
-      "zh": "把加载前那一道门，收敛成一条命令",
-      "en": "Collapse the pre-load gate into one command"
+  "story": {
+    "intro": {
+      "title": {
+        "en": "A concrete task",
+        "zh": "从实际任务出发"
+      },
+      "body": {
+        "en": "A model loader can fail late when a checkpoint has missing projections or mismatched shapes. Metadata checks surface these disagreements before the main load path allocates model tensors.",
+        "zh": "检查点缺少投影或 shape 不匹配，可能直到加载时才报错。元数据检查可以在主加载链路分配模型张量前暴露这些差异。"
+      }
     },
-    "sub": {
-      "zh": "开源、MIT、无付费墙。加载前验明正身这一步，永不设墙。",
-      "en": "Open source, MIT, no paywall. The pre-load check is never gated."
-    },
-    "button": { "zh": "在 GitHub 上开始", "en": "Get started on GitHub" }
-  },
-  "footer": {
-    "tag": {
-      "zh": "国产模型权重加载前的结构与后门哨兵",
-      "en": "The structure + backdoor sentinel for CN-model weights, before load"
-    }
+    "sections": [
+      {
+        "title": {
+          "en": "Follow the operation",
+          "zh": "处理过程"
+        },
+        "body": {
+          "en": "Container readers expose a common tensor view. The structural validator applies TensorProfile requirements, including declared MoE and MLA constraints. The scanner combines structure with the pickle scanner adapter; provenance is currently a separate unimplemented stage.",
+          "zh": "容器读取器提供统一张量视图。结构验证器应用 TensorProfile 要求，包括声明的 MoE 与 MLA 约束。scanner 将结构结果与 pickle 扫描适配器组合；provenance 当前是独立的未实现阶段。"
+        },
+        "image": {
+          "light": "/assets/presentation/process-light.svg",
+          "dark": "/assets/presentation/process-dark.svg",
+          "alt": {
+            "en": "Follow the operation",
+            "zh": "处理过程"
+          }
+        }
+      },
+      {
+        "title": {
+          "en": "How TensorSentry works",
+          "zh": "TensorSentry 的工作方式"
+        },
+        "body": {
+          "en": "Container readers expose a common tensor view. The structural validator applies TensorProfile requirements, including declared MoE and MLA constraints. The scanner combines structure with the pickle scanner adapter; provenance is currently a separate unimplemented stage.",
+          "zh": "容器读取器提供统一张量视图。结构验证器应用 TensorProfile 要求，包括声明的 MoE 与 MLA 约束。scanner 将结构结果与 pickle 扫描适配器组合；provenance 当前是独立的未实现阶段。"
+        },
+        "image": {
+          "light": "/assets/presentation/architecture-light.svg",
+          "dark": "/assets/presentation/architecture-dark.svg",
+          "alt": {
+            "en": "How TensorSentry works",
+            "zh": "TensorSentry 的工作方式"
+          }
+        }
+      },
+      {
+        "title": {
+          "en": "Connect the pieces",
+          "zh": "输入与输出"
+        },
+        "body": {
+          "en": "The following routes are implemented in the source. Choose the input that matches your task and keep the resulting artifact with your project.",
+          "zh": "以下路径已有源码实现。按任务选择输入，并把生成的结果与项目一起保存。"
+        },
+        "image": {
+          "light": "/assets/presentation/integrations-light.svg",
+          "dark": "/assets/presentation/integrations-dark.svg",
+          "alt": {
+            "en": "Connect the pieces",
+            "zh": "输入与输出"
+          }
+        }
+      }
+    ],
+    "details": [
+      {
+        "title": {
+          "en": "Configuration",
+          "zh": "配置"
+        },
+        "body": {
+          "en": "Select a registered profile only after comparing its assumptions with the actual model. The Python API accepts an explicit TensorProfile, which the demo uses for a two-value F32 tensor. The header parser does not load a model into an inference runtime.",
+          "zh": "注册配置应在与实际模型假设核对后选择。Python API 接受显式 TensorProfile，示例用它检查含两个 F32 值的张量。头解析器不会把模型加载进推理运行时。"
+        }
+      },
+      {
+        "title": {
+          "en": "Further use",
+          "zh": "进一步使用"
+        },
+        "body": {
+          "en": "The CLI exposes the following operations. Commands after the example use your own paths or identifiers.",
+          "zh": "CLI 提供以下操作。示例之外的命令需要替换成你的文件路径或标识。"
+        },
+        "code": "tensorsentry profiles\ntensorsentry validate <profile-id> model.safetensors\ntensorsentry scan --model <profile-id> ./checkpoint --json"
+      }
+    ]
   }
 }

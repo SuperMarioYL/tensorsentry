@@ -1,0 +1,38 @@
+{
+  "mode": "auto",
+  "id": "e1e656-a0e76a-f6ddac-23fdd73d23b1",
+  "identity": "https://github.com/supermarioyl/tensorsentry",
+  "primary": "#e1e656",
+  "secondary": "#a0e76a",
+  "highlight": "#f6ddac",
+  "dark": {
+    "bg": "#0a0c0d",
+    "panel": "#131717",
+    "code": "#131713",
+    "ink": "#fdf8ee",
+    "muted": "#b1b9a8",
+    "line": "#393c1d",
+    "primary": "#e1e656",
+    "secondary": "#a0e76a",
+    "highlight": "#f6ddac",
+    "accent": "#e1e656",
+    "buttonStart": "#787a2e",
+    "buttonEnd": "#5a813b",
+    "buttonText": "#ffffff"
+  },
+  "light": {
+    "bg": "#fefef9",
+    "panel": "#fefef7",
+    "code": "#fdfdf3",
+    "ink": "#262a1c",
+    "muted": "#6e7869",
+    "line": "#f6f7cb",
+    "primary": "#77792d",
+    "secondary": "#587f3b",
+    "highlight": "#81735a",
+    "accent": "#77792d",
+    "buttonStart": "#787a2e",
+    "buttonEnd": "#5a813b",
+    "buttonText": "#ffffff"
+  }
+}

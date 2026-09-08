@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "source_revision": "ec53d373df7922b00b68acb779758ca3df3e580a",
+  "scope": "A tiny real F32 safetensors file and an explicit demo-only profile exercise header parsing and structural validation. No model-specific profile accuracy, exploit scan or provenance verification is claimed.",
+  "steps": [
+    {
+      "label": "Recorded run",
+      "body": "A tiny real F32 safetensors file and an explicit demo-only profile exercise header parsing and structural validation. No model-specific profile accuracy, exploit scan or provenance verification is claimed.",
+      "command": "PYTHONPATH=src python3 examples/presentation-demo.py",
+      "output": "{\n  \"fixture_profile\": \"demo-linear\",\n  \"tensor_count\": 1,\n  \"valid_structure\": \"ok\",\n  \"empty_structure\": \"anomaly\",\n  \"missing_codes\": [\n    \"missing_tensor\"\n  ]\n}"
+    }
+  ]
+}
