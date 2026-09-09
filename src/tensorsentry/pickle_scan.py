@@ -15,10 +15,10 @@ model directory, or a malicious file mislabelled as a weight.
 
 from __future__ import annotations
 
-import io
 import os
 import pickletools
 from dataclasses import dataclass, field
+from typing import Any, BinaryIO
 
 __all__ = [
     "PickleFinding",
@@ -38,6 +38,9 @@ DANGEROUS_MODULES = {
 SUSPICIOUS_MODULES = {
     "pathlib", "glob", "io.open", "webbrowser", "socket", "urllib",
     "requests", "http", "ftplib", "smtplib", "telnetlib",
+    # A STACK_GLOBAL whose operand could not be resolved from the opcode
+    # stream (stack-computed module/name) — treat as evasion, not innocence.
+    "<unknown>",
 }
 
 
@@ -101,29 +104,98 @@ def _classify(module: str, name: str) -> str:
 
 # --- built-in fallback (no picklescan installed) ------------------------------
 
-def _disassemble_findings(data: bytes) -> list[PickleFinding]:
-    """Disassemble a pickle byte-stream with stdlib pickletools and collect globals."""
-    findings: list[PickleFinding] = []
-    seen: set[str] = set()
-    buf = io.BytesIO(data)
-    try:
-        for op, arg, pos in pickletools.genops(buf):
-            if op.name not in ("GLOBAL", "STACK_GLOBAL"):
-                continue
-            if isinstance(arg, tuple):
-                module, name = (str(arg[0]) if arg[0] else ""), (str(arg[1]) if len(arg) > 1 and arg[1] else "")
+# Opcode families used to resolve STACK_GLOBAL operands (same technique as
+# picklescan's _list_globals: walk back through string pushes and memo reads,
+# skipping MEMOIZE/PUT markers).
+_STRING_OPS = frozenset({
+    "SHORT_BINUNICODE", "BINUNICODE", "BINUNICODE8", "UNICODE",
+    "STRING", "BINSTRING", "SHORT_BINSTRING",
+})
+_MEMO_PUT_OPS = frozenset({"MEMOIZE", "PUT", "BINPUT", "LONG_BINPUT"})
+_MEMO_GET_OPS = frozenset({"GET", "BINGET", "LONG_BINGET"})
+_UNKNOWN_MODULE = "<unknown>"
+
+# Flat pickle/pytorch file suffixes — kept aligned with the extensions the
+# picklescan library scans in a directory (it additionally unpacks zip/7z/npy
+# containers, which this fallback does not).
+_PICKLE_SUFFIXES = (
+    ".bin", ".pt", ".pth", ".pkl", ".pickle", ".dat", ".data", ".joblib", ".ckpt",
+)
+
+
+def _stack_global_operands(ops: list, n: int, memo: dict) -> tuple[str, str]:
+    """Resolve the ``(module, name)`` operands of the STACK_GLOBAL at ``ops[n]``.
+
+    Protocol 2+ pickles push module then name as strings (sometimes memoized)
+    right before STACK_GLOBAL; walk backwards to recover them. A non-string,
+    non-memo opcode means the operand was computed on the stack — an evasion
+    attempt — and is reported as an unknown module rather than trusted.
+    """
+    values: list[str] = []
+    for offset in range(1, n + 1):
+        op, arg, _pos = ops[n - offset]
+        name = op.name
+        if name in _MEMO_PUT_OPS:
+            continue
+        if name in _MEMO_GET_OPS:
+            try:
+                key = int(arg)  # type: ignore[call-overload]
+            except (TypeError, ValueError):
+                values.append(_UNKNOWN_MODULE)
             else:
-                # GLOBAL arg is "module name"
-                parts = str(arg or "").rsplit(" ", 1)
+                val = memo.get(key, _UNKNOWN_MODULE)
+                values.append(val if isinstance(val, str) else _UNKNOWN_MODULE)
+        elif name in _STRING_OPS:
+            values.append(str(arg))
+        else:
+            values.append(_UNKNOWN_MODULE)
+        if len(values) == 2:
+            break
+    if len(values) < 2:
+        return _UNKNOWN_MODULE, _UNKNOWN_MODULE
+    return values[1], values[0]  # stack order: module pushed first, then name
+
+
+def _disassemble_findings(stream: BinaryIO) -> list[PickleFinding]:
+    """Disassemble a pickle stream with stdlib pickletools and collect globals.
+
+    Streams the file (no full in-memory copy); a stream that stops parsing
+    mid-way keeps whatever globals were found before the error, mirroring
+    picklescan's partial-pickle handling.
+    """
+    findings: list[PickleFinding] = []
+    seen: set[tuple[str, str]] = set()
+
+    def _record(module: str, name: str) -> None:
+        if (module, name) in seen:
+            return
+        seen.add((module, name))
+        findings.append(PickleFinding(module=module, name=name, safety=_classify(module, name)))
+
+    ops: list[tuple[Any, Any, int]] = []
+    memo: dict[Any, Any] = {}
+    try:
+        for op, arg, pos in pickletools.genops(stream):
+            ops.append((op, arg, pos))
+            if op.name == "MEMOIZE":
+                # MEMOIZE stores the value pushed by the *preceding* opcode.
+                memo[len(memo)] = ops[-2][1] if len(ops) >= 2 else None
+            elif op.name in ("PUT", "BINPUT", "LONG_BINPUT"):
+                memo[arg] = ops[-2][1] if len(ops) >= 2 else None
+            elif op.name in ("GLOBAL", "INST"):
+                parts = str(arg or "").split(" ", 1)
                 module, name = (parts[0], parts[1]) if len(parts) == 2 else (str(arg or ""), "")
-            key = f"{module}.{{name}}"
-            if key in seen:
-                continue
-            seen.add(key)
-            findings.append(PickleFinding(module=module, name=name, safety=_classify(module, name)))
+                _record(module, name)
     except Exception:
-        # not a valid pickle stream — no findings
-        return findings
+        # not a valid pickle stream — keep the globals found so far
+        pass
+
+    # STACK_GLOBAL needs the full opcode list (memo may be referenced anywhere
+    # earlier in the stream), so resolve it in a second pass.
+    for n, (op, _arg, _pos) in enumerate(ops):
+        if op.name == "STACK_GLOBAL":
+            module, name = _stack_global_operands(ops, n, memo)
+            _record(module, name)
     return findings
 
 
@@ -132,20 +204,17 @@ def _builtin_scan_file(path: str) -> PickleResult:
         with open(path, "rb") as f:
             head = f.read(8)
             if not _looks_like_pickle(head):
-                # could still be a long-prefixed pickle; read more to be sure
-                rest = f.read()
-                data = head + rest
-            else:
-                data = head + f.read()
+                # Not a pickle by magic — verdict without reading the (possibly
+                # huge) remainder of the file.
+                return PickleResult(
+                    exploit="clean", tool="builtin", scanned_files=0,
+                    reason="no pickle magic / __reduce__ found in file",
+                )
+            # Pickle magic present — rewind and disassemble the whole stream.
+            f.seek(0)
+            findings = _disassemble_findings(f)
     except OSError:
         return PickleResult(exploit="clean", tool="builtin", reason=f"cannot read {path}")
-    if not _looks_like_pickle(data[:8]):
-        # safetensors / gguf / random weight file → not a pickle → clean
-        return PickleResult(
-            exploit="clean", tool="builtin", scanned_files=0,
-            reason="no pickle magic / __reduce__ found in file",
-        )
-    findings = _disassemble_findings(data)
     dangerous = [f for f in findings if f.safety == "dangerous"]
     suspicious = [f for f in findings if f.safety == "suspicious"]
     if dangerous:
@@ -174,7 +243,7 @@ def _builtin_scan(path: str) -> PickleResult:
         results: list[PickleResult] = []
         for root, _dirs, files in os.walk(path):
             for fn in files:
-                if fn.endswith((".bin", ".pt", ".pth", ".pkl", ".pickle")):
+                if fn.endswith(_PICKLE_SUFFIXES):
                     results.append(_builtin_scan_file(os.path.join(root, fn)))
         return _merge(results)
     return _builtin_scan_file(path)
@@ -184,7 +253,7 @@ def _builtin_scan(path: str) -> PickleResult:
 
 def _picklescan_scan(path: str) -> PickleResult:
     try:
-        from picklescan.scanner import SafetyLevel, scan_directory_path, scan_file_path
+        from picklescan.scanner import scan_directory_path, scan_file_path
     except ImportError:  # pragma: no cover — fallback handles this
         return _builtin_scan(path)
 

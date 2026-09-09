@@ -44,7 +44,8 @@ dependencies = [
   "requests>=2.32",
   "safetensors>=0.4.5",
   "gguf>=0.10",
-  "picklescan>=0.0.21",
+  # 1.x verified against the wrapper; bound against untested future majors.
+  "picklescan>=0.0.21,<2",
 ]
 
 [project.optional-dependencies]
