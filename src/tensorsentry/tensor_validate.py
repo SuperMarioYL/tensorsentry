@@ -296,7 +296,7 @@ def validate_structure(
     # --- per-layer completeness of the MLA projection set ---
     if profile.mla is not None:
         mla_specs = [s for s in profile.required_tensors if s.category == "mla"]
-        layers_with_any_mla: set[int] = set()
+        expected = {s.logical_name for s in mla_specs}
         mla_by_layer: dict[int, set[str]] = {}
         for s in mla_specs:
             pat = _spec_pattern(s, source_format)
@@ -305,11 +305,30 @@ def validate_structure(
                     li = _layer_index(t.name)
                     if li is None:
                         continue
-                    layers_with_any_mla.add(li)
                     mla_by_layer.setdefault(li, set()).add(s.logical_name)
-        for li in sorted(layers_with_any_mla):
+        # A layer that appears at all must carry the complete MLA set — only
+        # whole layers missing to sharding are tolerated. A layer with tensors
+        # but zero MLA projections is either a stripped/tampered attention
+        # block or a shard boundary splitting one layer; both must be flagged,
+        # never silently passed as ok.
+        present_layers = {
+            li for li in (_layer_index(t.name) for t in tensors) if li is not None
+        }
+        for li in sorted(present_layers):
             present = mla_by_layer.get(li, set())
-            expected = {s.logical_name for s in mla_specs}
+            if not present:
+                anomalies.append(
+                    Anomaly(
+                        code="missing_mla",
+                        message=(
+                            f"layer {li} carries tensors but no MLA attention projections "
+                            f"at all — expected {sorted(expected)} (stripped/tampered attention "
+                            f"block, or a shard boundary splitting this layer)"
+                        ),
+                        layer=li,
+                    )
+                )
+                continue
             missing = expected - present
             if missing:
                 anomalies.append(

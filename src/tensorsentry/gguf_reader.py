@@ -30,6 +30,7 @@ __all__ = [
     "GGUFTensor",
     "GGUFHeader",
     "read_header",
+    "merge",
     "is_gguf",
     "GGUFError",
 ]
@@ -197,7 +198,17 @@ def read_header(path: str) -> GGUFHeader:
             dtype = _GGML_DTYPE_NAMES.get(dtype_id, f"DTYPE{dtype_id}")
             tensors[name] = GGUFTensor(name=name, dtype=dtype, dims=dims, offset=offset)
 
-    alignment = int(fields.get("general.alignment", 32)) or 32
+    # A corrupt or hostile file can type general.alignment as anything;
+    # nonsense values are a reader error, not a crash.
+    raw_alignment = fields.get("general.alignment", 32)
+    try:
+        alignment = int(raw_alignment)
+    except (TypeError, ValueError):
+        raise GGUFError(
+            f"invalid general.alignment value {raw_alignment!r}: {path}"
+        ) from None
+    if alignment <= 0:
+        alignment = 32
     return GGUFHeader(
         path=path,
         tensors=tensors,
@@ -205,3 +216,17 @@ def read_header(path: str) -> GGUFHeader:
         version=version,
         alignment=alignment,
     )
+
+
+def merge(headers: list[GGUFHeader]) -> GGUFHeader:
+    """Merge several GGUF headers into one virtual header (a directory of files).
+
+    Mirrors :func:`tensorsentry.safetensors_reader.merge`: tensor names are
+    unioned (later files win on overlap) so a directory of ``.gguf`` files can
+    be structurally validated in one pass.
+    """
+    merged = GGUFHeader(path="<merged>")
+    for h in headers:
+        merged.tensors.update(h.tensors)
+        merged.fields.update(h.fields)
+    return merged

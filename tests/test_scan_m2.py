@@ -119,6 +119,68 @@ def test_scan_provenance_stub_raises(mixed_model_dir):
         verify_provenance(mixed_model_dir, "deepseek-v4")
 
 
+# --- corrupt / malformed artifacts must be reported, never silent ----------
+
+def test_scan_truncated_safetensors_is_anomaly(truncated_safetensors):
+    """A file that claims safetensors but can't be parsed is a structure
+    anomaly (and the CLI exits non-zero), not a silent unknown_profile."""
+    rep = scanner.scan(truncated_safetensors, model_id="deepseek-v4")
+    assert rep.structure == "anomaly"
+    assert any("reader_error" in a and "truncated" in a for a in rep.anomalies), rep.anomalies
+    assert not rep.ok
+
+
+def test_validate_truncated_safetensors_is_anomaly(truncated_safetensors):
+    rep = scanner.validate("deepseek-v4", truncated_safetensors)
+    assert rep.structure == "anomaly"
+    assert any("reader_error" in a for a in rep.anomalies)
+    assert not rep.ok
+
+
+def test_cli_scan_truncated_exits_nonzero(truncated_safetensors):
+    proc = _run_cli("scan", "--model", "deepseek-v4", truncated_safetensors)
+    assert proc.returncode == 1
+    assert "Traceback" not in proc.stderr
+
+
+def test_gguf_bad_alignment_is_clean_reader_error(gguf_bad_alignment):
+    """A string-typed general.alignment must surface as a reader error, not
+    an uncaught ValueError traceback."""
+    rep = scanner.scan(gguf_bad_alignment, model_id="deepseek-v4")
+    assert rep.structure == "anomaly"
+    assert any("reader_error" in a and "general.alignment" in a for a in rep.anomalies)
+    proc = _run_cli("scan", "--model", "deepseek-v4", gguf_bad_alignment)
+    assert proc.returncode == 1
+    assert "Traceback" not in proc.stderr
+
+
+def test_scan_pickle_only_dir_still_runs_exploit_fallback(pickle_only_dir):
+    """An unknown container is not a structure verdict — the documented
+    mislabelled-pickle fallback keeps running the exploit pass."""
+    rep = scanner.scan(pickle_only_dir, model_id=None)
+    assert rep.exploit == "suspect"
+    assert rep.structure == "unknown_profile"
+
+
+def test_mixed_dir_deterministically_validates_safetensors(mixed_safetensors_gguf_dir):
+    """A dir with both .safetensors and .gguf must pick safetensors
+    deterministically, not by os.listdir order."""
+    for _ in range(5):
+        rep = scanner.scan(mixed_safetensors_gguf_dir, model_id="deepseek-v4")
+        assert rep.source_format == "safetensors"
+        assert rep.structure == "ok", rep.anomalies
+
+
+def test_gguf_directory_structural_scan(deepseek_gguf_dir):
+    """A directory of .gguf shards is structurally validated (merged),
+    including when a non-gguf file sits alongside."""
+    rep = scanner.scan(deepseek_gguf_dir, model_id="deepseek-v4")
+    assert rep.source_format == "gguf"
+    assert rep.structure == "ok", rep.anomalies
+    assert rep.structure_detail["expert_count"] == 256
+    assert len(rep.scanned_files) == 2
+
+
 # --- report JSON / rich --------------------------------------------------------
 
 def test_report_json_roundtrip(deepseek_safetensors):

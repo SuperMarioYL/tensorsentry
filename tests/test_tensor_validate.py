@@ -153,6 +153,23 @@ def test_validate_gguf_clean(deepseek_gguf):
     assert report.structure_detail["expert_count"] == 256
 
 
+def test_validate_flags_layer_with_mla_entirely_stripped(deepseek_safetensors_mla_stripped):
+    """A layer whose whole MLA attention block is gone (MoE intact) is an
+    anomaly — the docstring contract: a layer that appears at all must carry
+    the complete per-layer tensor set."""
+    report = scanner.validate("deepseek-v4", deepseek_safetensors_mla_stripped)
+    assert report.structure == "anomaly"
+    assert any("missing_mla" in a and "layer 1" in a for a in report.anomalies), report.anomalies
+    assert not report.ok
+
+
+def test_validate_layer0_only_shard_stays_ok(deepseek_layer0_shard):
+    """Sharding tolerance: a single shard carrying layer 0 complete plus
+    globals is ok (only whole missing layers are tolerated)."""
+    report = scanner.validate("deepseek-v4", deepseek_layer0_shard)
+    assert report.structure == "ok", report.anomalies
+
+
 def test_validate_gguf_wrong_expert_count(deepseek_gguf_wrong_experts):
     report = scanner.validate("deepseek-v4", deepseek_gguf_wrong_experts)
     assert report.structure == "anomaly"

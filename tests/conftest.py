@@ -336,3 +336,88 @@ def mixed_model_dir(tmp_path: Path, deepseek_safetensors, evil_pickle) -> str:
     shutil.copy(deepseek_safetensors, target)
     shutil.copy(evil_pickle, tmp_path / "config.bin")
     return str(tmp_path)
+
+
+@pytest.fixture
+def truncated_safetensors(tmp_path: Path, deepseek_safetensors) -> str:
+    """A safetensors file cut off in the middle of its JSON header."""
+    data = Path(deepseek_safetensors).read_bytes()
+    p = tmp_path / "truncated.safetensors"
+    p.write_bytes(data[: len(data) // 3])
+    return str(p)
+
+
+@pytest.fixture
+def gguf_bad_alignment(tmp_path: Path) -> str:
+    """A GGUF whose general.alignment is typed STRING (corrupt/hostile)."""
+    return _write_gguf(
+        str(tmp_path / "badalign.gguf"),
+        {"blk.0.attn_q.weight": ("BF16", [4, 4])},
+        fields={"general.alignment": "not-a-number"},
+    )
+
+
+@pytest.fixture
+def deepseek_safetensors_mla_stripped(tmp_path: Path) -> str:
+    """Layer 1 keeps its MoE block but every self_attn (MLA) tensor is gone."""
+    tensors = _deepseek_v4_tensors()
+    stripped = {k: v for k, v in tensors.items() if not k.startswith("model.layers.1.self_attn.")}
+    p = tmp_path / "deepseek-mla-stripped.safetensors"
+    return _write_safetensors(str(p), stripped)
+
+
+@pytest.fixture
+def deepseek_layer0_shard(tmp_path: Path) -> str:
+    """A single-shard checkpoint: layer 0 (complete) + globals only."""
+    tensors = _deepseek_v4_tensors()
+    shard = {
+        k: v for k, v in tensors.items()
+        if "layers.0" in k or "embed_tokens" in k or k == "model.norm.weight"
+    }
+    p = tmp_path / "model-00001-of-00002.safetensors"
+    return _write_safetensors(str(p), shard)
+
+
+@pytest.fixture
+def deepseek_gguf_dir(tmp_path: Path) -> str:
+    """A directory of two .gguf shards (layer 0 / layer 1 + embeddings)."""
+    HIDDEN = 7168
+    shards: list[dict] = [{}, {}]
+    for li in range(2):
+        t = {
+            f"blk.{li}.attn_q_a.weight": ("BF16", [1536, HIDDEN]),
+            f"blk.{li}.attn_q_a_norm.weight": ("BF16", [1536]),
+            f"blk.{li}.attn_q_b.weight": ("BF16", [16384, 1536]),
+            f"blk.{li}.attn_kv_a_mqa.weight": ("BF16", [576, HIDDEN]),
+            f"blk.{li}.attn_kv_a_norm.weight": ("BF16", [512]),
+            f"blk.{li}.attn_kv_b.weight": ("BF16", [32768, 512]),
+            f"blk.{li}.ffn_gate_inp.weight": ("BF16", [256, HIDDEN]),
+            f"blk.{li}.ffn_gate_exps.weight": ("BF16", [256, HIDDEN * 2, HIDDEN]),
+            f"blk.{li}.ffn_down_exps.weight": ("BF16", [256, HIDDEN, HIDDEN * 2]),
+            f"blk.{li}.ffn_up_exps.weight": ("BF16", [256, HIDDEN * 2, HIDDEN]),
+            f"blk.{li}.ffn_gate_shexp.weight": ("BF16", [HIDDEN * 2, HIDDEN]),
+        }
+        shards[li].update(t)
+    shards[1]["token_embd.weight"] = ("BF16", [257024, HIDDEN])
+    _write_gguf(str(tmp_path / "deepseek-00001.gguf"), shards[0])
+    _write_gguf(str(tmp_path / "deepseek-00002.gguf"), shards[1])
+    # a decoy non-gguf file must not break directory detection
+    (tmp_path / "config.json").write_text("{}")
+    return str(tmp_path)
+
+
+@pytest.fixture
+def mixed_safetensors_gguf_dir(tmp_path: Path, deepseek_safetensors, deepseek_gguf) -> str:
+    """A dir holding both a safetensors model and an unrelated .gguf file."""
+    import shutil
+    shutil.copy(deepseek_safetensors, tmp_path / "model.safetensors")
+    shutil.copy(deepseek_gguf, tmp_path / "quantized.gguf")
+    return str(tmp_path)
+
+
+@pytest.fixture
+def pickle_only_dir(tmp_path: Path, evil_pickle) -> str:
+    """A directory with no weight containers — only a poisoned pickle."""
+    import shutil
+    shutil.copy(evil_pickle, tmp_path / "pytorch_model.bin")
+    return str(tmp_path)
