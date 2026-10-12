@@ -4,6 +4,36 @@ All notable changes to TensorSentry are documented here. Versions follow
 [semver](https://semver.org/); the format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.3.0] — 2026-10-13
+
+### Fixed
+
+- **Per-layer completeness is now enforced for every profile category, not
+  just MLA.** A Kimi K3 or Qwen3.7 layer whose entire attention block (or
+  entire MoE block) had been quietly removed validated as `ok` — the
+  completeness walk only covered the DeepSeek-V4 MLA category. A layer present
+  in the checkpoint but carrying none of a category's required tensors is now
+  flagged `missing_attention` / `missing_moe` (a partial set is
+  `incomplete_attention` / `incomplete_moe`); present-only specs declared with
+  `min_matches=0` (e.g. Qwen shared experts) stay exempt.
+- **An unreadable shard no longer crashes the scan.** Scanning a directory
+  that contained one permission-denied `.safetensors` shard escaped as a raw
+  `PermissionError` traceback. Reader `OSError`s now surface as a
+  `reader_error` structure anomaly with a non-zero exit, matching the corrupt-
+  artifact contract.
+- **Unknown profile ids are rejected as usage errors.** `tensorsentry validate
+  <typo>` and `tensorsentry scan --model <typo>` exited 0 as
+  `unknown_profile`, silently passing CI gates on a mistyped profile name.
+  They now exit 2 with the list of valid profiles. Omitting `--model` keeps
+  the documented exploit-only scan; the Python API's `unknown_profile` verdict
+  is unchanged.
+
+### Added
+
+- GitHub releases now attach the wheel, sdist and SHA-256 checksums built on
+  the tag run — the v0.2.0 release shipped with zero assets because the
+  workflow only produced a CI artifact.
+
 ## [0.2.0] — 2026-09-09
 
 ### Fixed

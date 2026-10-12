@@ -282,4 +282,4 @@ def test_cli_scan_suspect_pickle_exits_nonzero(mixed_model_dir):
 def test_cli_version():
     proc = _run_cli("--version")
     assert proc.returncode == 0
-    assert "0.2.0" in proc.stdout
+    assert "0.3.0" in proc.stdout
