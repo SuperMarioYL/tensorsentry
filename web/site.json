@@ -83,8 +83,8 @@
       "zh": "本地上手"
     },
     "body": {
-      "en": "Generate a tiny safetensors file in a temporary directory, check its explicit shape profile, then show the missing-tensor rejection on an empty input.",
-      "zh": "在临时目录生成微型 safetensors 文件，检查明确的 shape 配置，再展示空输入的缺失张量拒绝。"
+      "en": "Generate a tiny safetensors file in a temporary directory, check its explicit shape profile, then show the missing-tensor rejection on an empty input. Tagged GitHub releases attach the wheel, sdist and SHA-256 checksums.",
+      "zh": "在临时目录生成微型 safetensors 文件，检查明确的 shape 配置，再展示空输入的缺失张量拒绝。GitHub 标签发布附有 wheel、sdist 与 SHA-256 校验和。"
     },
     "steps": [
       {
@@ -208,8 +208,8 @@
           "zh": "配置"
         },
         "body": {
-          "en": "Select a registered profile only after comparing its assumptions with the actual model. The Python API accepts an explicit TensorProfile, which the demo uses for a two-value F32 tensor. The header parser does not load a model into an inference runtime.",
-          "zh": "注册配置应在与实际模型假设核对后选择。Python API 接受显式 TensorProfile，示例用它检查含两个 F32 值的张量。头解析器不会把模型加载进推理运行时。"
+          "en": "Select a registered profile only after comparing its assumptions with the actual model; an unknown profile id is rejected as a usage error. Per-layer completeness is checked for every category the profile declares, and unreadable artifacts surface as reader errors instead of crashes. The Python API accepts an explicit TensorProfile, which the demo uses for a two-value F32 tensor. The header parser does not load a model into an inference runtime.",
+          "zh": "注册配置应在与实际模型假设核对后选择；未知的配置标识会被作为用法错误拒绝。逐层完整性会针对配置声明的每个类别检查，不可读的工件以读取错误形式报告而不是崩溃。Python API 接受显式 TensorProfile，示例用它检查含两个 F32 值的张量。头解析器不会把模型加载进推理运行时。"
         }
       },
       {
