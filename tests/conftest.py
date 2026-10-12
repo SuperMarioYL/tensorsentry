@@ -367,6 +367,42 @@ def deepseek_safetensors_mla_stripped(tmp_path: Path) -> str:
 
 
 @pytest.fixture
+def kimi_safetensors_attention_stripped(tmp_path: Path) -> str:
+    """Kimi K3 layer 1 keeps its MoE block but every self_attn tensor is gone."""
+    tensors = _kimi_k3_tensors()
+    stripped = {k: v for k, v in tensors.items() if not k.startswith("model.layers.1.self_attn.")}
+    p = tmp_path / "kimi-attention-stripped.safetensors"
+    return _write_safetensors(str(p), stripped)
+
+
+@pytest.fixture
+def kimi_safetensors_moe_stripped(tmp_path: Path) -> str:
+    """Kimi K3 layers keep their attention blocks but every .mlp.* tensor is gone."""
+    tensors = _kimi_k3_tensors()
+    stripped = {k: v for k, v in tensors.items() if ".mlp." not in k}
+    p = tmp_path / "kimi-moe-stripped.safetensors"
+    return _write_safetensors(str(p), stripped)
+
+
+@pytest.fixture
+def qwen_safetensors_mlp_stripped(tmp_path: Path) -> str:
+    """Qwen3.7 layers keep their attention blocks but every .mlp.* tensor is gone."""
+    tensors = _qwen3_7_tensors()
+    stripped = {k: v for k, v in tensors.items() if ".mlp." not in k}
+    p = tmp_path / "qwen-mlp-stripped.safetensors"
+    return _write_safetensors(str(p), stripped)
+
+
+@pytest.fixture
+def qwen_safetensors_missing_q_proj(tmp_path: Path) -> str:
+    """Qwen3.7 layer 1 keeps k/v/o attention but q_proj is stripped (partial)."""
+    tensors = _qwen3_7_tensors()
+    stripped = {k: v for k, v in tensors.items() if k != "model.layers.1.self_attn.q_proj.weight"}
+    p = tmp_path / "qwen-missing-qproj.safetensors"
+    return _write_safetensors(str(p), stripped)
+
+
+@pytest.fixture
 def deepseek_layer0_shard(tmp_path: Path) -> str:
     """A single-shard checkpoint: layer 0 (complete) + globals only."""
     tensors = _deepseek_v4_tensors()
@@ -421,3 +457,20 @@ def pickle_only_dir(tmp_path: Path, evil_pickle) -> str:
     import shutil
     shutil.copy(evil_pickle, tmp_path / "pytorch_model.bin")
     return str(tmp_path)
+
+
+@pytest.fixture
+def dir_with_unreadable_shard(tmp_path: Path) -> str:
+    """A model directory where one .safetensors shard is permission-denied.
+
+    Restores the mode on teardown so tmp_path cleanup can remove the tree.
+    """
+    import os
+    d = tmp_path / "perm-model-dir"
+    d.mkdir()
+    _write_safetensors(str(d / "model-00001.safetensors"), _deepseek_v4_tensors())
+    locked = str(d / "model-00002.safetensors")
+    _write_safetensors(locked, _deepseek_v4_tensors())
+    os.chmod(locked, 0o000)
+    yield str(d)
+    os.chmod(locked, 0o644)

@@ -247,6 +247,10 @@ def validate_structure(
       * each required tensor spec must be satisfied (>= ``min_matches``),
         per-layer for spec names containing a layer wildcard;
       * dtypes/shapes match the spec constraints;
+      * per-layer completeness per spec category (mla / attention / moe):
+        a layer that appears at all carries the full required set of each
+        category — flagged missing_<category> when absent, incomplete_<category>
+        when partial (min_matches=0 specs are present-only and exempt);
       * MLA ranks (q_lora_rank / kv_lora_rank) appear in the right tensor dims;
       * MoE expert count per layer equals ``moe.n_experts``;
       * MoE shared expert(s) and router exist.
@@ -293,54 +297,66 @@ def validate_structure(
             if li is not None:
                 layer_set.add(li)
 
-    # --- per-layer completeness of the MLA projection set ---
-    if profile.mla is not None:
-        mla_specs = [s for s in profile.required_tensors if s.category == "mla"]
-        expected = {s.logical_name for s in mla_specs}
-        mla_by_layer: dict[int, set[str]] = {}
-        for s in mla_specs:
+    # --- per-layer completeness, per required-tensor category ---
+    # A layer that appears at all must carry the complete per-layer set of
+    # every category the profile declares (mla / attention / moe) — only
+    # whole layers missing to sharding are tolerated. A layer with tensors
+    # but zero tensors of a category is either a stripped/tampered block or
+    # a shard boundary splitting one layer; both must be flagged, never
+    # silently passed as ok. min_matches=0 specs (present-only checks such
+    # as qwen's shared experts) are exempt from the completeness contract.
+    # Specs whose pattern has no layer wildcard are global tensors and are
+    # covered by the min_matches coverage check above instead.
+    categories: dict[str, list[TensorSpec]] = {}
+    for spec in profile.required_tensors:
+        pat = _spec_pattern(spec, source_format)
+        if spec.min_matches > 0 and ("layers" in pat or "blk" in pat):
+            categories.setdefault(spec.category, []).append(spec)
+    present_layers = {
+        li for li in (_layer_index(t.name) for t in tensors) if li is not None
+    }
+    for cat in sorted(categories):
+        specs = categories[cat]
+        expected = {s.logical_name for s in specs}
+        by_layer: dict[int, set[str]] = {}
+        for s in specs:
             pat = _spec_pattern(s, source_format)
             for t in tensors:
                 if fnmatchcase(t.name, pat):
                     li = _layer_index(t.name)
                     if li is None:
                         continue
-                    mla_by_layer.setdefault(li, set()).add(s.logical_name)
-        # A layer that appears at all must carry the complete MLA set — only
-        # whole layers missing to sharding are tolerated. A layer with tensors
-        # but zero MLA projections is either a stripped/tampered attention
-        # block or a shard boundary splitting one layer; both must be flagged,
-        # never silently passed as ok.
-        present_layers = {
-            li for li in (_layer_index(t.name) for t in tensors) if li is not None
-        }
+                    by_layer.setdefault(li, set()).add(s.logical_name)
         for li in sorted(present_layers):
-            present = mla_by_layer.get(li, set())
+            present = by_layer.get(li, set())
             if not present:
-                anomalies.append(
-                    Anomaly(
-                        code="missing_mla",
-                        message=(
-                            f"layer {li} carries tensors but no MLA attention projections "
-                            f"at all — expected {sorted(expected)} (stripped/tampered attention "
-                            f"block, or a shard boundary splitting this layer)"
-                        ),
-                        layer=li,
+                if cat == "mla":
+                    message = (
+                        f"layer {li} carries tensors but no MLA attention projections "
+                        f"at all — expected {sorted(expected)} (stripped/tampered attention "
+                        f"block, or a shard boundary splitting this layer)"
                     )
-                )
+                else:
+                    message = (
+                        f"layer {li} carries tensors but none of the required {cat} "
+                        f"tensors — expected {sorted(expected)} (stripped/tampered block, "
+                        f"or a shard boundary splitting this layer)"
+                    )
+                anomalies.append(Anomaly(code=f"missing_{cat}", message=message, layer=li))
                 continue
             missing = expected - present
             if missing:
-                anomalies.append(
-                    Anomaly(
-                        code="incomplete_mla",
-                        message=(
-                            f"layer {li} exposes MLA attention but is missing projections: "
-                            f"{sorted(missing)} — a tampered/truncated MLA block"
-                        ),
-                        layer=li,
+                if cat == "mla":
+                    message = (
+                        f"layer {li} exposes MLA attention but is missing projections: "
+                        f"{sorted(missing)} — a tampered/truncated MLA block"
                     )
-                )
+                else:
+                    message = (
+                        f"layer {li} exposes {cat} tensors but is missing: "
+                        f"{sorted(missing)} — a tampered/truncated block"
+                    )
+                anomalies.append(Anomaly(code=f"incomplete_{cat}", message=message, layer=li))
 
     # --- MoE expert count + router + shared ---
     expert_count: int | None = None

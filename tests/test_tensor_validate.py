@@ -170,6 +170,54 @@ def test_validate_layer0_only_shard_stays_ok(deepseek_layer0_shard):
     assert report.structure == "ok", report.anomalies
 
 
+# --- per-layer completeness beyond MLA (attention / moe categories) ------------
+
+def test_validate_flags_kimi_layer_with_attention_entirely_stripped(kimi_safetensors_attention_stripped):
+    """A Kimi K3 layer whose whole attention block is gone (MoE intact) is an
+    anomaly — the per-layer completeness contract covers every category the
+    profile declares, not just MLA."""
+    report = scanner.validate("kimi-k3", kimi_safetensors_attention_stripped)
+    assert report.structure == "anomaly"
+    assert any("missing_attention" in a and "layer 1" in a for a in report.anomalies), report.anomalies
+    assert not report.ok
+
+
+def test_validate_flags_kimi_layer_with_moe_entirely_stripped(kimi_safetensors_moe_stripped):
+    """A Kimi K3 layer whose whole MoE block (router + experts) is gone is an
+    anomaly too."""
+    report = scanner.validate("kimi-k3", kimi_safetensors_moe_stripped)
+    assert report.structure == "anomaly"
+    assert any("missing_moe" in a for a in report.anomalies), report.anomalies
+    assert not report.ok
+
+
+def test_validate_flags_qwen_layer_with_moe_entirely_stripped(qwen_safetensors_mlp_stripped):
+    report = scanner.validate("qwen3.7", qwen_safetensors_mlp_stripped)
+    assert report.structure == "anomaly"
+    assert any("missing_moe" in a and "layer 1" in a for a in report.anomalies), report.anomalies
+
+
+def test_validate_flags_qwen_partial_attention_stripped(qwen_safetensors_missing_q_proj):
+    """A layer keeping k/v/o but missing q_proj is incomplete, not missing."""
+    report = scanner.validate("qwen3.7", qwen_safetensors_missing_q_proj)
+    assert report.structure == "anomaly"
+    assert any("incomplete_attention" in a and "layer 1" in a for a in report.anomalies), report.anomalies
+    assert not any("missing_attention" in a for a in report.anomalies), report.anomalies
+
+
+def test_validate_qwen_shared_expert_absence_stays_ok(qwen_safetensors_no_shared):
+    """min_matches=0 specs are present-only: dropping qwen's shared experts
+    alone must not trip the completeness contract."""
+    report = scanner.validate("qwen3.7", qwen_safetensors_no_shared)
+    assert report.structure == "ok", report.anomalies
+
+
+def test_validate_kimi_clean_stays_ok(kimi_safetensors):
+    """The generalized completeness walk keeps clean checkpoints ok."""
+    report = scanner.validate("kimi-k3", kimi_safetensors)
+    assert report.structure == "ok", report.anomalies
+
+
 def test_validate_gguf_wrong_expert_count(deepseek_gguf_wrong_experts):
     report = scanner.validate("deepseek-v4", deepseek_gguf_wrong_experts)
     assert report.structure == "anomaly"

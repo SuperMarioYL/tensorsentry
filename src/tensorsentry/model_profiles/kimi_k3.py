@@ -6,9 +6,9 @@ cannot assert "this weight file exposes exactly 896 Kimi experts" because that
 requires a maintained per-model schema — exactly what TensorSentry encodes.
 
 This profile focuses on the MoE expert count and standard grouped-query
-attention projections. (Kimi's attention block specifics are tracked as a
-profile refinement; the m1/m2 wedge validates the expert-count invariant the
-plan names.)
+attention projections. The validator enforces both the expert-count invariant
+the plan names and the per-layer attention completeness the specs declare — a
+layer stripped of its attention block is an anomaly, not a silent pass.
 """
 
 from __future__ import annotations
