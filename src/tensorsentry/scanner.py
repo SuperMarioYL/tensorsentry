@@ -117,9 +117,11 @@ def validate(model_id: str, path: str) -> ScanReport:
             structure="unknown_profile", exploit="clean",
             anomalies=[f"reader error: {exc}"],
         )
-    except (safetensors_reader.SafetensorsError, gguf_reader.GGUFError) as exc:
+    except (safetensors_reader.SafetensorsError, gguf_reader.GGUFError, OSError) as exc:
         # The artifact claims a known weight format but is unparseable —
-        # corrupt or tampered, which is itself a structural anomaly.
+        # corrupt or tampered, which is itself a structural anomaly. OSError
+        # (e.g. PermissionError on an unreadable shard inside a directory)
+        # takes the same path: an unreadable artifact must not crash the CLI.
         structure = _reader_error_structure(model_id, exc)
         return ScanReport.from_results(
             path=path, model=model_id, source_format="unknown",
@@ -149,10 +151,11 @@ def scan(
             structure=None, exploit=exploit, scanned_files=[path],
             provenance="unreachable",
         )
-    except (safetensors_reader.SafetensorsError, gguf_reader.GGUFError) as exc:
+    except (safetensors_reader.SafetensorsError, gguf_reader.GGUFError, OSError) as exc:
         # Claims a known weight format but unparseable — corrupt or tampered.
         # Surface it as a structure anomaly (non-zero exit) while still
-        # running the exploit pass.
+        # running the exploit pass. OSError (e.g. PermissionError on an
+        # unreadable shard inside a directory) takes the same path.
         structure = _reader_error_structure(model_id or "(unknown)", exc)
         exploit_result = scan_path(path)
         return ScanReport.from_results(

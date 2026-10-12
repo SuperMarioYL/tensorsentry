@@ -162,6 +162,42 @@ def test_scan_pickle_only_dir_still_runs_exploit_fallback(pickle_only_dir):
     assert rep.structure == "unknown_profile"
 
 
+def test_scan_dir_with_unreadable_shard_is_reader_error(dir_with_unreadable_shard):
+    """A permission-denied shard inside a scanned directory is a reader_error
+    anomaly (exit 1), never a raw PermissionError traceback."""
+    rep = scanner.scan(dir_with_unreadable_shard, model_id="deepseek-v4")
+    assert rep.structure == "anomaly"
+    assert any("reader_error" in a for a in rep.anomalies), rep.anomalies
+    assert not rep.ok
+
+
+def test_cli_scan_dir_with_unreadable_shard_exits_nonzero(dir_with_unreadable_shard):
+    proc = _run_cli("scan", "--model", "deepseek-v4", dir_with_unreadable_shard)
+    assert proc.returncode == 1
+    assert "Traceback" not in proc.stderr
+    assert "PermissionError" not in proc.stderr
+
+
+def test_cli_unknown_profile_is_usage_error(deepseek_safetensors):
+    """An explicitly requested profile id that no profile registers is a usage
+    error (exit 2) naming the valid ids — not a silent unknown_profile pass."""
+    proc = _run_cli("validate", "deepseek-v99", deepseek_safetensors)
+    assert proc.returncode == 2
+    assert "unknown profile" in (proc.stdout + proc.stderr).lower()
+    assert "deepseek-v4" in (proc.stdout + proc.stderr)
+
+    proc = _run_cli("scan", "--model", "deepseek-v99", deepseek_safetensors)
+    assert proc.returncode == 2
+    assert "unknown profile" in (proc.stdout + proc.stderr).lower()
+
+
+def test_cli_library_unknown_profile_verdict_unchanged(deepseek_safetensors):
+    """The scanner library keeps its unknown_profile verdict; only the CLI
+    rejects an explicitly bad profile id."""
+    rep = scanner.validate("deepseek-v99", deepseek_safetensors)
+    assert rep.structure == "unknown_profile"
+
+
 def test_mixed_dir_deterministically_validates_safetensors(mixed_safetensors_gguf_dir):
     """A dir with both .safetensors and .gguf must pick safetensors
     deterministically, not by os.listdir order."""

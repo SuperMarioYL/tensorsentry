@@ -18,11 +18,26 @@ import click
 from rich.console import Console
 
 from . import __version__
-from .model_profiles import list_profiles
+from .model_profiles import get_profile, list_profiles
 from .report import ScanReport, render_rich, to_json
 from .scanner import known_profiles, scan as run_scan, validate as run_validate
 
 console = Console()
+
+
+def _require_profile(model: str) -> None:
+    """Reject an explicitly requested profile id that no profile registers.
+
+    The scanner library legitimately returns the ``unknown_profile`` verdict
+    when no model was requested (the exploit-only scan); a profile id the user
+    explicitly typed is a usage error, not a silent pass.
+    """
+    if get_profile(model) is None:
+        valid = ", ".join(p.model_id for p in list_profiles())
+        raise click.BadParameter(
+            f"unknown profile '{model}'. Valid profiles: {valid}.",
+            param_hint="'MODEL'",
+        )
 
 
 def _emit(report: ScanReport, as_json: bool, quiet: bool) -> None:
@@ -79,6 +94,7 @@ def validate_cmd(model: str, path: str, as_json: bool, quiet: bool) -> None:
     Example:
       tensorsentry validate deepseek-v4 ./model-00001-of-0000X.safetensors
     """
+    _require_profile(model)
     report = run_validate(model, path)
     _emit(report, as_json, quiet)
     if not report.ok and report.structure != "unknown_profile":
@@ -100,6 +116,8 @@ def scan_cmd(path: str, model: str | None, provenance: bool, as_json: bool, quie
       tensorsentry scan --model kimi-k3 ./kimi-k3.gguf --json
       tensorsentry scan ./suspect_dir            # exploit-only if no model given
     """
+    if model is not None:
+        _require_profile(model)
     report = run_scan(path, model_id=model, include_provenance=provenance)
     _emit(report, as_json, quiet)
     # Exit non-zero on a real flag (suspect exploit OR structural anomaly).
