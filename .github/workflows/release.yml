@@ -27,6 +27,15 @@ jobs:
         with:
           name: dist
           path: dist/*
+      # Attach the built artifacts to the GitHub release itself (not just the
+      # workflow artifact). Order-tolerant: if the release object does not
+      # exist yet, create it with the assets attached.
+      - name: Attach artifacts to the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "$GITHUB_REF_NAME" dist/* --clobber \
+            || gh release create "$GITHUB_REF_NAME" dist/* --generate-notes
 
   # Opt-in PyPI trusted publishing. A fresh repo has no Trusted Publisher
   # registered, so this is gated behind the PYPI_PUBLISH repo variable — the
