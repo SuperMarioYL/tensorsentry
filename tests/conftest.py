@@ -403,6 +403,47 @@ def qwen_safetensors_missing_q_proj(tmp_path: Path) -> str:
 
 
 @pytest.fixture
+def deepseek_safetensors_experts_stripped(tmp_path: Path) -> str:
+    """Layer 1 keeps its router (and MLA) but every expert tensor is gone."""
+    tensors = _deepseek_v4_tensors()
+    stripped = {
+        k: v for k, v in tensors.items()
+        if not k.startswith("model.layers.1.mlp.experts.")
+    }
+    p = tmp_path / "deepseek-experts-stripped.safetensors"
+    return _write_safetensors(str(p), stripped)
+
+
+@pytest.fixture
+def kimi_safetensors_experts_stripped(tmp_path: Path) -> str:
+    """Layer 1 keeps its router (and attention) but the batched expert bank is gone."""
+    tensors = _kimi_k3_tensors()
+    stripped = {
+        k: v for k, v in tensors.items()
+        if not k.startswith("model.layers.1.mlp.experts.")
+    }
+    p = tmp_path / "kimi-experts-stripped.safetensors"
+    return _write_safetensors(str(p), stripped)
+
+
+@pytest.fixture
+def incomplete_index_dir(tmp_path: Path) -> str:
+    """Index declares two shards but only the first exists (interrupted download)."""
+    tensors = _deepseek_v4_tensors()
+    shard = {
+        k: v for k, v in tensors.items()
+        if "layers.0" in k or "embed_tokens" in k or k == "model.norm.weight"
+    }
+    _write_safetensors(str(tmp_path / "model-00001-of-00002.safetensors"), shard)
+    weight_map = {"model.layers.0.self_attn.q_a_proj.weight": "model-00001-of-00002.safetensors"}
+    weight_map["model.layers.1.self_attn.q_a_proj.weight"] = "model-00002-of-00002.safetensors"
+    (tmp_path / "model.safetensors.index.json").write_text(
+        json.dumps({"weight_map": weight_map})
+    )
+    return str(tmp_path)
+
+
+@pytest.fixture
 def deepseek_layer0_shard(tmp_path: Path) -> str:
     """A single-shard checkpoint: layer 0 (complete) + globals only."""
     tensors = _deepseek_v4_tensors()

@@ -178,6 +178,28 @@ def test_cli_scan_dir_with_unreadable_shard_exits_nonzero(dir_with_unreadable_sh
     assert "PermissionError" not in proc.stderr
 
 
+def test_scan_incomplete_index_reports_reader_error(incomplete_index_dir):
+    """An index.json that names a shard absent from disk is an incomplete
+    download, not a valid subset: it must surface as a reader_error anomaly
+    instead of validating ok."""
+    rep = scanner.scan(incomplete_index_dir, model_id="deepseek-v4")
+    assert rep.structure == "anomaly"
+    assert any("reader_error" in a and "missing shard" in a for a in rep.anomalies), rep.anomalies
+    assert not rep.ok
+
+
+def test_validate_incomplete_index_is_anomaly(incomplete_index_dir):
+    rep = scanner.validate("deepseek-v4", incomplete_index_dir)
+    assert rep.structure == "anomaly"
+    assert any("reader_error" in a for a in rep.anomalies)
+
+
+def test_cli_scan_incomplete_index_exits_nonzero(incomplete_index_dir):
+    proc = _run_cli("scan", "--model", "deepseek-v4", incomplete_index_dir)
+    assert proc.returncode == 1
+    assert "Traceback" not in proc.stderr
+
+
 def test_cli_unknown_profile_is_usage_error(deepseek_safetensors):
     """An explicitly requested profile id that no profile registers is a usage
     error (exit 2) naming the valid ids — not a silent unknown_profile pass."""
@@ -282,4 +304,4 @@ def test_cli_scan_suspect_pickle_exits_nonzero(mixed_model_dir):
 def test_cli_version():
     proc = _run_cli("--version")
     assert proc.returncode == 0
-    assert "0.3.0" in proc.stdout
+    assert "0.4.0" in proc.stdout

@@ -141,6 +141,35 @@ def test_fallback_directory_reports_clean_without_pickles(no_picklescan, tmp_pat
     assert res.exploit == "clean"
 
 
+@pytest.mark.parametrize("protocol", [0, 1])
+def test_fallback_flags_protocol0_global_pickle(no_picklescan, tmp_path, protocol):
+    """Protocol 0/1 streams carry no PROTO opcode and start with GLOBAL
+    ("c<module>\\n<name>\\n"); the magic probe must not verdict them clean."""
+    import os as _os
+
+    p = tmp_path / f"evil-p{protocol}.pkl"
+    with open(p, "wb") as f:
+        f.write(pickle.dumps(_SystemCall(_os.system, "echo pwn"), protocol=protocol))
+    res = pickle_scan.scan_path(str(p))
+    assert res.tool == "builtin"
+    assert res.exploit == "suspect", (res.exploit, res.reason)
+    assert any("system" in f.qualname for f in res.findings if f.safety == "dangerous")
+
+
+def test_picklescan_exception_falls_back_to_builtin(monkeypatch, evil_pickle):
+    """A picklescan error must not be reported as a clean verdict — the
+    built-in scanner already exists and must take over."""
+    import picklescan.scanner as ps
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("scanner crashed")
+
+    monkeypatch.setattr(ps, "scan_file_path", _boom)
+    res = pickle_scan.scan_path(evil_pickle)
+    assert res.tool == "builtin"
+    assert res.exploit == "suspect", (res.exploit, res.reason)
+
+
 def test_primary_picklescan_path_still_used(deepseek_safetensors):
     """With picklescan importable the primary path runs (regression guard for
     the fallback rewrite touching shared code paths)."""

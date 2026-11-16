@@ -87,6 +87,11 @@ def _looks_like_pickle(data: bytes) -> bool:
         return False
     if data[:2] in _PICKLE_MAGICS or data[:1] in (b"\x80",):
         return True
+    # Protocol 0/1 streams carry no PROTO opcode and typically begin with the
+    # GLOBAL opcode ("c<module>\n<name>\n"). Requiring the newline keeps a text
+    # file that merely starts with 'c' from being treated as a pickle.
+    if data[:1] == b"c" and b"\n" in data:
+        return True
     # zip / 7z containers picklescan also unpacks — leave detection to picklescan.
     return data[:2] == b"PK" or data[:6] == b"7z\xbc\xaf\x27\x1c"
 
@@ -202,7 +207,10 @@ def _disassemble_findings(stream: BinaryIO) -> list[PickleFinding]:
 def _builtin_scan_file(path: str) -> PickleResult:
     try:
         with open(path, "rb") as f:
-            head = f.read(8)
+            # A bounded probe is enough to recognise the container: PROTO-framed
+            # pickles and (protocol 0/1) a leading GLOBAL whose module name may
+            # exceed the old 8-byte window.
+            head = f.read(256)
             if not _looks_like_pickle(head):
                 # Not a pickle by magic — verdict without reading the (possibly
                 # huge) remainder of the file.
@@ -262,9 +270,12 @@ def _picklescan_scan(path: str) -> PickleResult:
             res = scan_directory_path(path)
         else:
             res = scan_file_path(path)
-    except Exception as exc:
-        # picklescan raises on non-pickle files in some versions — treat as clean.
-        return PickleResult(exploit="clean", tool="picklescan", reason=f"scan skipped: {exc}")
+    except Exception:
+        # picklescan raised (malformed input, scanner bug) — do not report a
+        # clean verdict for an unscanned artifact. Delegating to the built-in
+        # fallback keeps the documented "always produces an exploit verdict"
+        # contract.
+        return _builtin_scan(path)
 
     findings: list[PickleFinding] = []
     for g in getattr(res, "globals", []) or []:

@@ -376,7 +376,7 @@ def validate_structure(
                             layer=li,
                         )
                     )
-        # router present on every MoE layer
+        # Router present on every MoE layer.
         router_pat = profile.moe.router_gguf_pattern if source_format == "gguf" else profile.moe.router_pattern
         router_layers: set[int] = set()
         for t in tensors:
@@ -384,8 +384,24 @@ def validate_structure(
                 li = _layer_index(t.name)
                 if li is not None:
                     router_layers.add(li)
-        expert_layers = set(counts.keys())
-        for li in sorted(expert_layers - router_layers):
+        # Anchor the expert census on router presence: a layer that keeps its
+        # router must expose its expert tensors too. The census only reports
+        # layers it actually saw expert tensors for, so without this rule a
+        # layer whose entire expert bank was stripped would pass both the
+        # router-only "moe" completeness category and the count comparison.
+        for li in sorted(router_layers - set(counts)):
+            anomalies.append(
+                Anomaly(
+                    code="missing_experts",
+                    message=(
+                        f"layer {li} has a router but no expert tensors — the MoE "
+                        f"expert bank is missing (stripped/tampered block, or a shard "
+                        f"boundary splitting this layer)"
+                    ),
+                    layer=li,
+                )
+            )
+        for li in sorted(set(counts) - router_layers):
             anomalies.append(
                 Anomaly(code="missing_router", message=f"layer {li} has experts but no router tensor", layer=li)
             )

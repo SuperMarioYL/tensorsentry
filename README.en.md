@@ -30,7 +30,7 @@ A model loader can fail late when a checkpoint has missing projections or mismat
   <img src="./assets/presentation/architecture-light.svg" width="960" alt="Architecture diagram">
 </picture>
 
-Container readers expose a common tensor view. The structural validator applies TensorProfile requirements, including declared MoE and MLA constraints. The scanner combines structure with the pickle scanner adapter; provenance is currently a separate unimplemented stage.
+Container readers expose a common tensor view. The structural validator applies TensorProfile requirements, including declared MoE and MLA constraints. An index that names a shard missing from disk, or a layer that keeps its router but loses its expert bank, is reported as an anomaly rather than a pass. The scanner combines structure with the pickle scanner adapter; provenance is currently a separate unimplemented stage.
 
 | Component | Responsibility |
 | --- | --- |

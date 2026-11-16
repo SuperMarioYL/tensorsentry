@@ -30,7 +30,7 @@ TensorSentry 读取张量名称、dtype 与 shape，与声明配置比较并报�
   <img src="./assets/presentation/architecture-light.svg" width="960" alt="Architecture diagram">
 </picture>
 
-容器读取器提供统一张量视图。结构验证器应用 TensorProfile 要求，包括声明的 MoE 与 MLA 约束。scanner 将结构结果与 pickle 扫描适配器组合；provenance 当前是独立的未实现阶段。
+容器读取器提供统一张量视图。结构验证器应用 TensorProfile 要求，包括声明的 MoE 与 MLA 约束。索引声明但磁盘缺失的分片、以及保留路由却丢失专家张量的层，都会报告为异常而不是通过。scanner 将结构结果与 pickle 扫描适配器组合；provenance 当前是独立的未实现阶段。
 
 | 组件 | 职责 |
 | --- | --- |

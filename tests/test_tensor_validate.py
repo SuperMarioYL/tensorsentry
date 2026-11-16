@@ -212,6 +212,25 @@ def test_validate_qwen_shared_expert_absence_stays_ok(qwen_safetensors_no_shared
     assert report.structure == "ok", report.anomalies
 
 
+def test_validate_flags_deepseek_layer_with_expert_bank_removed(deepseek_safetensors_experts_stripped):
+    """A layer that keeps its router but has zero expert tensors is an anomaly:
+    the expert census is anchored on router presence, so a stripped expert bank
+    can no longer hide behind the router-only moe completeness category."""
+    report = scanner.validate("deepseek-v4", deepseek_safetensors_experts_stripped)
+    assert report.structure == "anomaly"
+    assert any("missing_experts" in a and "layer 1" in a for a in report.anomalies), report.anomalies
+    assert not report.ok
+
+
+def test_validate_flags_kimi_layer_with_expert_bank_removed(kimi_safetensors_experts_stripped):
+    """The batched-expert layout is covered too: a router without its
+    ffn_gate_exps bank is missing_experts, not ok."""
+    report = scanner.validate("kimi-k3", kimi_safetensors_experts_stripped)
+    assert report.structure == "anomaly"
+    assert any("missing_experts" in a and "layer 1" in a for a in report.anomalies), report.anomalies
+    assert not report.ok
+
+
 def test_validate_kimi_clean_stays_ok(kimi_safetensors):
     """The generalized completeness walk keeps clean checkpoints ok."""
     report = scanner.validate("kimi-k3", kimi_safetensors)

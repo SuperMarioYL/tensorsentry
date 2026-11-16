@@ -4,6 +4,37 @@ All notable changes to TensorSentry are documented here. Versions follow
 [semver](https://semver.org/); the format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.4.0] — 2026-11-16
+
+### Fixed
+
+- **A layer whose entire MoE expert bank was removed no longer validates
+  `ok`.** The expert census only compared layers it had already seen expert
+  tensors for, and the per-layer `moe` completeness rule was satisfied by the
+  router alone — so stripping every `model.layers.N.mlp.experts.*` tensor (or
+  the batched `experts.gate_proj` bank) from one layer passed silently. Every
+  layer that keeps its router must now also expose its expert tensors;
+  `missing_experts` names the layer otherwise. Router-less layers remain
+  sharding-tolerant.
+- **A partial download no longer validates `ok`.** When
+  `model.safetensors.index.json` is present, `read_directory()` used to skip
+  shards the index names but that are not on disk and validate the remaining
+  subset. Because whole missing layers are tolerated for legitimate sharding,
+  an interrupted ModelScope pull passed the pre-load gate. Index-referenced
+  shards must now exist; a missing one is a `reader_error` anomaly and the CLI
+  exits non-zero.
+- **The built-in pickle fallback detects protocol-0/1 code-exec pickles.**
+  Protocol 0/1 streams carry no `PROTO` opcode and begin with `GLOBAL`
+  (`c<module>\n<name>\n`), which the magic probe rejected, so an `os.system`
+  gadget serialized with `protocol=0` verdict `clean` when `picklescan` was
+  unavailable. A leading `GLOBAL` is now recognised, and the probe reads a
+  bounded 256-byte window so longer module names are covered.
+- **A picklescan exception now falls back to the built-in scanner.** The
+  primary path caught every exception and returned `clean`, so an unscanned or
+  unparseable artifact could be reported as having no exploit. It now delegates
+  to the built-in scanner, preserving the documented "always produces an
+  exploit verdict" contract.
+
 ## [0.3.0] — 2026-10-13
 
 ### Fixed

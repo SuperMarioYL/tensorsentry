@@ -199,14 +199,17 @@ def read_directory(directory: str) -> list[SafetensorsHeader]:
 
     index = _index_json(directory)
     if index is not None:
-        shards: list[SafetensorsHeader] = []
-        seen: set[str] = set()
-        for shard_name in sorted(set(index.values())):
-            if shard_name in seen or not os.path.isfile(shard_name):
-                continue
-            seen.add(shard_name)
-            shards.append(read_header(shard_name))
-        return shards
+        shard_names = sorted(set(index.values()))
+        missing = [name for name in shard_names if not os.path.isfile(name)]
+        if missing:
+            # The index is authoritative: shards it names must exist. Silently
+            # validating the subset would let an interrupted download pass the
+            # pre-load gate, because whole missing layers are tolerated for
+            # legitimate sharding.
+            raise SafetensorsError(
+                "safetensors index references missing shard(s): " + ", ".join(missing)
+            )
+        return [read_header(name) for name in shard_names]
 
     # No index — parse every shard file directly.
     out: list[SafetensorsHeader] = []
